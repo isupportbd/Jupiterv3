@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import chalk from "chalk";
 import { appConfig, mailConfig, realtimeConfig, redisConfig } from "@/config/index.js";
 import { createKernel } from "@/framework/kernel.js";
-import { stopQueueRuntime } from "@/framework/queue/queue.js";
+import { startQueueWorker, stopQueueRuntime } from "@/framework/queue/queue.js";
 import { stopQueueDashboard } from "@/framework/queue/ui.js";
 import { broadcast, closeRealtime, initRealtime, WS_PATH } from "@/framework/realtime/index.js";
 import { setupSocketAdminUI } from "@/framework/realtime/ui.js";
@@ -99,6 +99,17 @@ export async function startServer(): Promise<ServerHandle> {
   }
 
   registerShutdownSignals(shutdown);
+
+  if (redisConfig.enabled) {
+    try {
+      await startQueueWorker(["default", "mail"]);
+      logger.info("Integrated queue worker started for [default, mail]");
+    } catch (error) {
+      logger.warn("Integrated queue worker failed to start", {
+        error: error instanceof Error ? error.message : error
+      });
+    }
+  }
 
   if (redisConfig.enabled && realtime) {
     const redis = redisClientIfReady();
