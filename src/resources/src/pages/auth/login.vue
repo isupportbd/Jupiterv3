@@ -7,9 +7,6 @@
 
         <!-- ── STEP 1: CREDENTIALS ── -->
         <div v-if="step === 'credentials'">
-          <p v-if="errorMessage" class="text-center alert alert-danger text-danger py-2 mt-2 fs-7">
-            {{ errorMessage }}
-          </p>
           <form @submit.prevent="onSubmit">
             <div class="mb-2">
               <Input
@@ -62,10 +59,6 @@
               <strong class="text-dark">{{ maskedEmail }}</strong>
             </p>
           </div>
-
-          <p v-if="otpError" class="text-center alert alert-danger text-danger py-2 fs-7">
-            {{ otpError }}
-          </p>
 
           <form @submit.prevent="onVerifyOtp">
             <div class="mb-4">
@@ -219,8 +212,9 @@ const onSubmit = async () => {
         await router.push("/");
       },
       onError: (_errors, error) => {
-        errorMessage.value = error instanceof Error ? error.message : "Unable to login right now";
-        toast.danger(errorMessage.value);
+        const serverMsg = (error as any)?.response?.data?.message;
+        const msg = serverMsg || (error instanceof Error ? error.message : "Invalid credentials or unable to login");
+        toast.danger(msg);
         form.reset("password");
       }
     }

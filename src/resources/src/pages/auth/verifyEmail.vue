@@ -6,12 +6,6 @@
           <img src="@/assets/images/logo.png" alt="nexgen" style="max-height: 60px;" />
         </div>
         <h4 class="text-center">Email Verification</h4>
-        <p
-          v-if="message"
-          class="text-center alert py-2 mt-2"
-          :class="isError ? 'alert-danger text-danger' : 'alert-success text-success'">
-          {{ message }}
-        </p>
         <div class="text-center mt-2">
           <router-link to="/login">
             <span>Back to login</span>

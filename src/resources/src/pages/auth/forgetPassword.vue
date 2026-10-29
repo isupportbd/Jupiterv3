@@ -6,12 +6,6 @@
           <AppLogo :size="46" text-class="fs-3 text-primary fw-bold" />
         </div>
         <h4 class="text-center">Forget Password</h4>
-        <p
-          v-if="message"
-          class="text-center alert py-1 mt-2"
-          :class="isError ? 'alert-danger text-danger' : 'alert-success text-success'">
-          {{ message }}
-        </p>
         <form id="formAuthentication" @submit.prevent="onSubmit">
           <div class="mb-4">
             <Input
@@ -75,8 +69,9 @@ const onSubmit = async () => {
       },
       onError: (_errors, error) => {
         isError.value = true;
-        message.value = error instanceof Error ? error.message : "Failed to process request";
-        toast.danger(message.value);
+        const serverMsg = (error as any)?.response?.data?.message;
+        const msg = serverMsg || (error instanceof Error ? error.message : "Failed to process request");
+        toast.danger(msg);
       }
     }
   );
