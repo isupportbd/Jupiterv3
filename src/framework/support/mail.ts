@@ -13,7 +13,7 @@ type MailPayload = {
 const transport = nodemailer.createTransport({
   host: mailConfig.host,
   port: mailConfig.port,
-  secure: mailConfig.encryption === "ssl",
+  secure: mailConfig.encryption === "ssl" || mailConfig.port === 465,
   auth: mailConfig.username ? { user: mailConfig.username, pass: mailConfig.password } : undefined
 });
 
