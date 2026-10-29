@@ -23,11 +23,14 @@ export class IngestionService {
   private exporterCache = new Map<string, number>();
   private beneficiaryCache = new Map<string, number>();
   private lcMasterCache = new Map<string, number>();
+  private isCacheInitialized = false;
 
   /**
    * Pre-load existing master entity caches to avoid repetitive SELECT queries.
    */
-  async initCache() {
+  async initCache(force = false) {
+    if (this.isCacheInitialized && !force) return;
+
     const existingBanks = await db.select({ id: banks.id, name: banks.name }).from(banks);
     for (const b of existingBanks) {
       this.bankCache.set(b.name.trim().toLowerCase(), b.id);
@@ -58,6 +61,8 @@ export class IngestionService {
     for (const l of existingLcs) {
       this.lcMasterCache.set(l.lcId.trim().toLowerCase(), l.id);
     }
+
+    this.isCacheInitialized = true;
   }
 
   private isValidBankName(name: string): boolean {
@@ -463,7 +468,7 @@ export class IngestionService {
   /**
    * Ingests a batch of normalized records with MD5 deduplication and integer foreign keys.
    */
-  async processBatch(rows: RawLcRow[], userId: number) {
+  async processBatch(rows: RawLcRow[], userId: number, deferSummaryRefresh = false) {
     await this.initCache();
 
     const recordsToInsert = [];
@@ -603,7 +608,9 @@ export class IngestionService {
       .returning({ id: lcRecords.id });
 
     // Recalculate pre-aggregated monthly metrics for affected months
-    await this.refreshMonthlySummaries(Array.from(affectedMonths));
+    if (!deferSummaryRefresh) {
+      await this.refreshMonthlySummaries(Array.from(affectedMonths));
+    }
 
     // Invalidate cached reports & storage stats after new data ingestion
     try {
@@ -615,7 +622,8 @@ export class IngestionService {
 
     return {
       insertedCount: inserted.length,
-      skippedCount: recordsToInsert.length - inserted.length
+      skippedCount: recordsToInsert.length - inserted.length,
+      affectedMonths: Array.from(affectedMonths)
     };
   }
 
@@ -696,5 +704,7 @@ export class IngestionService {
     this.lcMasterCache.clear();
     this.bankCache.clear();
     this.branchCache.clear();
+    this.natureCache.clear();
+    this.isCacheInitialized = false;
   }
 }

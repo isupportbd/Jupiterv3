@@ -13,6 +13,7 @@ const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 export const uploadBatch: Handler = async (c: any) => {
   try {
     const auth = c.get("auth");
+    const deferSummary = c.req.query("deferSummary") === "true";
     const rawBody = await c.req.json();
 
     const parsed = BatchUploadSchema.safeParse(rawBody);
@@ -27,7 +28,7 @@ export const uploadBatch: Handler = async (c: any) => {
     }
 
     const rows = parsed.data;
-    const result = await ingestionService.processBatch(rows, auth.id);
+    const result = await ingestionService.processBatch(rows, auth.id, deferSummary);
 
     return c.json(
       {
@@ -39,6 +40,30 @@ export const uploadBatch: Handler = async (c: any) => {
   } catch (error) {
     console.error("Batch upload error:", error);
     return c.json({ message: "Batch ingestion failed" }, HttpStatusCodes.INTERNAL_SERVER_ERROR);
+  }
+};
+
+/**
+ * Finalizes an upload session by recomputing pre-aggregated summaries for affected months in a single shot.
+ * POST /api/data-management/upload/finalize
+ */
+export const finalizeUpload: Handler = async (c: any) => {
+  try {
+    const rawBody = await c.req.json().catch(() => ({}));
+    const months = Array.isArray(rawBody.months) ? rawBody.months : [];
+    if (months.length > 0) {
+      await ingestionService.refreshMonthlySummaries(months);
+    }
+    return c.json(
+      {
+        message: "Upload finalized and summaries refreshed successfully.",
+        data: { refreshedMonths: months }
+      },
+      HttpStatusCodes.OK
+    );
+  } catch (error) {
+    console.error("Finalize upload error:", error);
+    return c.json({ message: "Failed to finalize upload." }, HttpStatusCodes.INTERNAL_SERVER_ERROR);
   }
 };
 

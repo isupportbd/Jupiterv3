@@ -8,7 +8,19 @@ export const BatchUploadResponseSchema = z.object({
   data: z.object({
     insertedCount: z.number(),
     skippedCount: z.number().optional(),
+    affectedMonths: z.array(z.string()).optional(),
     errors: z.array(z.any()).optional()
+  }).optional()
+});
+
+export const FinalizeUploadBodySchema = z.object({
+  months: z.array(z.string()).optional()
+});
+
+export const FinalizeUploadResponseSchema = z.object({
+  message: z.string(),
+  data: z.object({
+    refreshedMonths: z.array(z.string()).optional()
   }).optional()
 });
 

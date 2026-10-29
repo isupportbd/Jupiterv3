@@ -192,7 +192,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, toRaw } from "vue";
 import { useRouter } from "vue-router";
 import axios from "axios";
 import { useToast } from "@/composables/useToast";
@@ -649,7 +649,6 @@ async function processSelectedFile(file: File) {
   }
 }
 
-let activeUploadWorker: Worker | null = null;
 let wakeLockSentinel: any = null;
 
 async function requestWakeLock() {
@@ -671,143 +670,8 @@ function releaseWakeLock() {
   }
 }
 
-function createUploadWorker() {
-  const workerScript = `
-    self.onmessage = async function(e) {
-      const { rows, batchSize, endpoint } = e.data;
-      const total = rows.length;
-      let processed = 0;
-      let totalInserted = 0;
-
-      for (let i = 0; i < total; i += batchSize) {
-        const chunk = rows.slice(i, i + batchSize);
-        const currentEnd = Math.min(i + batchSize, total);
-
-        self.postMessage({
-          type: 'status',
-          statusText: 'Uploading records ' + (i + 1).toLocaleString() + ' to ' + currentEnd.toLocaleString() + ' of ' + total.toLocaleString() + '...',
-          progress: Math.round((processed / total) * 100)
-        });
-
-        try {
-          const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            },
-            credentials: 'include',
-            body: JSON.stringify(chunk)
-          });
-
-          if (!res.ok) {
-            const errJson = await res.json().catch(() => ({}));
-            throw new Error(errJson.message || 'Batch upload failed with status ' + res.status);
-          }
-
-          const resData = await res.json();
-          if (resData && resData.data && resData.data.insertedCount !== undefined) {
-            totalInserted += Number(resData.data.insertedCount);
-          }
-          processed += chunk.length;
-
-          self.postMessage({
-            type: 'progress',
-            progress: Math.round((processed / total) * 100),
-            processed,
-            total,
-            totalInserted
-          });
-        } catch (err) {
-          self.postMessage({
-            type: 'error',
-            message: err.message || 'Failed to ingest records.'
-          });
-          return;
-        }
-      }
-
-      self.postMessage({
-        type: 'done',
-        total,
-        totalInserted
-      });
-    };
-  `;
-
-  const blob = new Blob([workerScript], { type: "application/javascript" });
-  return new Worker(URL.createObjectURL(blob));
-}
-
-async function runDirectUpload() {
-  const rows = parsedRows.value;
-  const total = rows.length;
-  const batchSize = 1000;
-  let processed = 0;
-  let totalInserted = 0;
-  const endpoint = "/api/data-management/upload/batch";
-
-  try {
-    for (let i = 0; i < total; i += batchSize) {
-      if (!uploading.value) break;
-
-      const chunk = rows.slice(i, i + batchSize);
-      const currentEnd = Math.min(i + batchSize, total);
-
-      uploadStatusText.value = `Uploading records ${(i + 1).toLocaleString()} to ${currentEnd.toLocaleString()} of ${total.toLocaleString()}...`;
-      uploadProgress.value = Math.round((processed / total) * 100);
-
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        credentials: "include",
-        body: JSON.stringify(chunk)
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.message || `Batch upload failed with status ${res.status}`);
-      }
-
-      const resData = await res.json();
-      if (resData && resData.data && resData.data.insertedCount !== undefined) {
-        totalInserted += Number(resData.data.insertedCount);
-      }
-      processed += chunk.length;
-
-      uploadProgress.value = Math.round((processed / total) * 100);
-      uploadStatusText.value = `Uploaded ${processed.toLocaleString()} of ${total.toLocaleString()} records...`;
-
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-
-    releaseWakeLock();
-    uploading.value = false;
-    showModal.value = false;
-    parsedRows.value = [];
-    selectedFileName.value = "";
-    uploadProgress.value = 0;
-
-    toast.success(`Successfully uploaded ${total.toLocaleString()} records (${totalInserted.toLocaleString()} new inserted).`);
-    emit("ingested");
-    await router.push("/reports/local-lc");
-  } catch (err: any) {
-    releaseWakeLock();
-    uploading.value = false;
-    console.error("Direct ingestion error:", err);
-    toast.danger(err.message || "Failed to ingest records.");
-  }
-}
-
 function closeUploadModal() {
   if (uploading.value) return;
-  if (activeUploadWorker) {
-    activeUploadWorker.terminate();
-    activeUploadWorker = null;
-  }
   releaseWakeLock();
   showModal.value = false;
   parsedRows.value = [];
@@ -823,77 +687,91 @@ async function startIngestion() {
   if (parsedRows.value.length === 0 || uploading.value) return;
   uploading.value = true;
   uploadProgress.value = 0;
-  const batchSize = 1000;
-  const total = parsedRows.value.length;
-  uploadStatusText.value = `Preparing background upload of ${total.toLocaleString()} records...`;
 
   await requestWakeLock();
 
-  if (activeUploadWorker) {
-    activeUploadWorker.terminate();
-    activeUploadWorker = null;
-  }
+  const total = parsedRows.value.length;
+  const batchSize = 1000;
+  const totalBatches = Math.ceil(total / batchSize);
+  let processed = 0;
+  let totalInserted = 0;
+  const affectedMonthsSet = new Set<string>();
 
-  let worker: Worker | null = null;
+  uploadStatusText.value = `Starting upload of ${total.toLocaleString()} records in ${totalBatches} batches...`;
+
   try {
-    worker = createUploadWorker();
-  } catch (err) {
-    console.warn("Could not create Web Worker, using direct upload fallback:", err);
-    await runDirectUpload();
-    return;
+    for (let i = 0; i < total; i += batchSize) {
+      if (!uploading.value) break;
+
+      const batchNum = Math.floor(i / batchSize) + 1;
+      const currentEnd = Math.min(i + batchSize, total);
+
+      uploadStatusText.value = `Uploading batch ${batchNum} of ${totalBatches} (records ${(i + 1).toLocaleString()} to ${currentEnd.toLocaleString()})...`;
+
+      // Extract plain JS objects without reactive proxy wrappers to avoid any thread overhead
+      const rawChunk = parsedRows.value.slice(i, i + batchSize).map((r) => ({ ...toRaw(r) }));
+
+      const res = await fetch("/api/data-management/upload/batch?deferSummary=true", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        credentials: "include",
+        body: JSON.stringify(rawChunk)
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || `Batch ${batchNum} failed with status ${res.status}`);
+      }
+
+      const resData = await res.json();
+      if (resData?.data?.insertedCount !== undefined) {
+        totalInserted += Number(resData.data.insertedCount);
+      }
+      if (Array.isArray(resData?.data?.affectedMonths)) {
+        resData.data.affectedMonths.forEach((m: string) => affectedMonthsSet.add(m));
+      }
+
+      processed += rawChunk.length;
+      uploadProgress.value = Math.round((processed / total) * 100);
+      uploadStatusText.value = `Uploaded ${processed.toLocaleString()} of ${total.toLocaleString()} records (${uploadProgress.value}%)...`;
+
+      // Brief micro-yield so Vue and the browser repaint immediately
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    // Finalize once: recalculate monthly analytics summary in a single query
+    if (affectedMonthsSet.size > 0) {
+      uploadStatusText.value = "Finalizing monthly analytics summary...";
+      await fetch("/api/data-management/upload/finalize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        credentials: "include",
+        body: JSON.stringify({ months: Array.from(affectedMonthsSet) })
+      }).catch((e) => console.warn("Summary finalization notice:", e));
+    }
+
+    releaseWakeLock();
+    uploading.value = false;
+    showModal.value = false;
+    parsedRows.value = [];
+    selectedFileName.value = "";
+    uploadProgress.value = 0;
+
+    toast.success(`Successfully uploaded ${total.toLocaleString()} records (${totalInserted.toLocaleString()} new inserted).`);
+    emit("ingested");
+    await router.push("/reports/local-lc");
+  } catch (err: any) {
+    releaseWakeLock();
+    uploading.value = false;
+    console.error("Ingestion error:", err);
+    toast.danger(err.message || "Failed to ingest records.");
   }
-
-  activeUploadWorker = worker;
-
-  activeUploadWorker.onmessage = async (e: MessageEvent) => {
-    const data = e.data;
-    if (data.type === "status") {
-      uploadStatusText.value = data.statusText;
-      uploadProgress.value = data.progress;
-    } else if (data.type === "progress") {
-      uploadProgress.value = data.progress;
-      uploadStatusText.value = `Uploaded ${data.processed.toLocaleString()} of ${data.total.toLocaleString()} records...`;
-    } else if (data.type === "done") {
-      if (activeUploadWorker) {
-        activeUploadWorker.terminate();
-        activeUploadWorker = null;
-      }
-      releaseWakeLock();
-      uploading.value = false;
-      showModal.value = false;
-      parsedRows.value = [];
-      selectedFileName.value = "";
-      uploadProgress.value = 0;
-
-      toast.success(`Successfully uploaded ${data.total.toLocaleString()} records (${data.totalInserted.toLocaleString()} new inserted).`);
-      emit("ingested");
-      await router.push("/reports/local-lc");
-    } else if (data.type === "error") {
-      if (activeUploadWorker) {
-        activeUploadWorker.terminate();
-        activeUploadWorker = null;
-      }
-      releaseWakeLock();
-      uploading.value = false;
-      console.error("Background ingestion error:", data.message);
-      toast.danger(data.message || "Failed to ingest records.");
-    }
-  };
-
-  activeUploadWorker.onerror = async (err) => {
-    console.warn("Worker error encountered, falling back to direct upload:", err);
-    if (activeUploadWorker) {
-      activeUploadWorker.terminate();
-      activeUploadWorker = null;
-    }
-    await runDirectUpload();
-  };
-
-  activeUploadWorker.postMessage({
-    rows: parsedRows.value,
-    batchSize,
-    endpoint: "/api/data-management/upload/batch"
-  });
 }
 
 defineExpose({

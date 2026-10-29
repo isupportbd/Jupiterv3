@@ -25,14 +25,16 @@ import {
   MonthwiseSummaryQuerySchema,
   MonthwiseSummaryResponseSchema
 } from "../controllers/report.schema.js";
-import { deleteMonthChunk, deleteMonthData, uploadBatch } from "../controllers/upload.controller.js";
+import { deleteMonthChunk, deleteMonthData, finalizeUpload, uploadBatch } from "../controllers/upload.controller.js";
 import {
   BatchUploadResponseSchema,
   BatchUploadSchema,
   DeleteMonthChunkBodySchema,
   DeleteMonthChunkResponseSchema,
   DeleteMonthDataBodySchema,
-  DeleteMonthDataResponseSchema
+  DeleteMonthDataResponseSchema,
+  FinalizeUploadBodySchema,
+  FinalizeUploadResponseSchema
 } from "../controllers/upload.schema.js";
 
 const dashboardAnalyticsRoute = createRoute({
@@ -133,6 +135,20 @@ const uploadBatchRoute = createRoute({
   }
 });
 
+const finalizeUploadRoute = createRoute({
+  path: "/upload/finalize",
+  method: "post",
+  tags: ["Data Management"],
+  description: "Refreshes monthly aggregates once all ingestion chunks have finished (Admin Only)",
+  request: {
+    body: jsonContent(FinalizeUploadBodySchema, "Finalize upload payload")
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(FinalizeUploadResponseSchema, "Successfully finalized upload"),
+    [HttpStatusCodes.INTERNAL_SERVER_ERROR]: jsonContent(GenericMessageSchema, "Failed to finalize upload")
+  }
+});
+
 const deleteMonthDataRoute = createRoute({
   path: "/reports/monthwise/delete",
   method: "post",
@@ -177,6 +193,7 @@ const reportRouter = createRouter()
 const adminManagementRouter = createRouter()
   .group(authMiddleware, subscriptionMiddleware, requireRole("admin", "super_admin"))
   .api(uploadBatchRoute, uploadBatch)
+  .api(finalizeUploadRoute, finalizeUpload)
   .api(deleteMonthDataRoute, deleteMonthData)
   .api(deleteMonthChunkRoute, deleteMonthChunk);
 
