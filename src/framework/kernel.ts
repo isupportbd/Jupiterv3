@@ -1,5 +1,6 @@
 import { appConfig } from "@/config/index.js";
 import { validateConfig } from "@/config/validate.js";
+import { runAutoMigrations } from "@/framework/database/auto-migrate.js";
 import { initDatabase } from "@/framework/database/connection.js";
 import { createHttpApp } from "@/framework/http/app.js";
 import { ensurePublicDir, hasUiBuild, uiIndexMiddleware, uiStaticMiddleware } from "@/framework/http/static.js";
@@ -25,6 +26,7 @@ export async function createKernel() {
   const app = createHttpApp();
 
   await initDatabase();
+  await runAutoMigrations();
   await bootQueueJobs();
   await registerModuleRoutes(app);
 
