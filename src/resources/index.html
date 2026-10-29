@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/x-icon" href="./src/assets/images/favicon/favicon.ico" />
+    <script src="/theme-boot.js"></script>
+    <style>
+      :root {
+        color-scheme: light;
+        --app-splash-bg: #f5f5f9;
+      }
+
+      html[data-bs-theme="dark"] {
+        color-scheme: dark;
+        --app-splash-bg: #121212;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background-color: var(--app-splash-bg);
+      }
+
+      #app {
+        min-height: 100vh;
+        background-color: var(--app-splash-bg);
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="modal-show"></div>
+    <div id="toast-show"></div>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+
+</html>
