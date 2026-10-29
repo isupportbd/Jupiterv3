@@ -3,7 +3,7 @@ FROM node:22-alpine AS base
 WORKDIR /app
 
 # Install system dependencies for native builds if needed
-RUN apk add --no-cache libc6-compat postgresql-client
+RUN apk add --no-cache libc6-compat postgresql-client curl
 
 # Install all dependencies (including devDependencies for building)
 FROM base AS deps
@@ -33,5 +33,8 @@ COPY --from=builder /app/tsconfig.json ./
 
 EXPOSE 80
 EXPOSE 3001
+
+HEALTHCHECK --interval=20s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -f http://127.0.0.1:${PORT:-80}/health || exit 1
 
 CMD ["npx", "tsx", "src/framework/server.ts"]
