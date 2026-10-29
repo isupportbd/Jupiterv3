@@ -8,7 +8,7 @@ const envSchema = z
   .object({
     APP_NAME: z.string().default("nexgen"),
     APP_ENV: z.enum(["development", "production", "test"]).default("development"),
-    APP_PORT: z.coerce.number().default(3000),
+    APP_PORT: z.coerce.number().default(Number(process.env.PORT) || 80),
     APP_URL: z.string().trim().min(1, "APP_URL is required in .env"),
     UI: z
       .string()
