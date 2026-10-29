@@ -696,7 +696,7 @@ function createUploadWorker() {
               'Content-Type': 'application/json',
               'Accept': 'application/json'
             },
-            credentials: 'same-origin',
+            credentials: 'include',
             body: JSON.stringify(chunk)
           });
 
@@ -739,6 +739,69 @@ function createUploadWorker() {
   return new Worker(URL.createObjectURL(blob));
 }
 
+async function runDirectUpload() {
+  const rows = parsedRows.value;
+  const total = rows.length;
+  const batchSize = 1000;
+  let processed = 0;
+  let totalInserted = 0;
+  const endpoint = "/api/data-management/upload/batch";
+
+  try {
+    for (let i = 0; i < total; i += batchSize) {
+      if (!uploading.value) break;
+
+      const chunk = rows.slice(i, i + batchSize);
+      const currentEnd = Math.min(i + batchSize, total);
+
+      uploadStatusText.value = `Uploading records ${(i + 1).toLocaleString()} to ${currentEnd.toLocaleString()} of ${total.toLocaleString()}...`;
+      uploadProgress.value = Math.round((processed / total) * 100);
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        credentials: "include",
+        body: JSON.stringify(chunk)
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || `Batch upload failed with status ${res.status}`);
+      }
+
+      const resData = await res.json();
+      if (resData && resData.data && resData.data.insertedCount !== undefined) {
+        totalInserted += Number(resData.data.insertedCount);
+      }
+      processed += chunk.length;
+
+      uploadProgress.value = Math.round((processed / total) * 100);
+      uploadStatusText.value = `Uploaded ${processed.toLocaleString()} of ${total.toLocaleString()} records...`;
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    releaseWakeLock();
+    uploading.value = false;
+    showModal.value = false;
+    parsedRows.value = [];
+    selectedFileName.value = "";
+    uploadProgress.value = 0;
+
+    toast.success(`Successfully uploaded ${total.toLocaleString()} records (${totalInserted.toLocaleString()} new inserted).`);
+    emit("ingested");
+    await router.push("/reports/local-lc");
+  } catch (err: any) {
+    releaseWakeLock();
+    uploading.value = false;
+    console.error("Direct ingestion error:", err);
+    toast.danger(err.message || "Failed to ingest records.");
+  }
+}
+
 function closeUploadModal() {
   if (uploading.value) return;
   if (activeUploadWorker) {
@@ -760,7 +823,7 @@ async function startIngestion() {
   if (parsedRows.value.length === 0 || uploading.value) return;
   uploading.value = true;
   uploadProgress.value = 0;
-  const batchSize = 5000;
+  const batchSize = 1000;
   const total = parsedRows.value.length;
   uploadStatusText.value = `Preparing background upload of ${total.toLocaleString()} records...`;
 
@@ -771,7 +834,16 @@ async function startIngestion() {
     activeUploadWorker = null;
   }
 
-  activeUploadWorker = createUploadWorker();
+  let worker: Worker | null = null;
+  try {
+    worker = createUploadWorker();
+  } catch (err) {
+    console.warn("Could not create Web Worker, using direct upload fallback:", err);
+    await runDirectUpload();
+    return;
+  }
+
+  activeUploadWorker = worker;
 
   activeUploadWorker.onmessage = async (e: MessageEvent) => {
     const data = e.data;
@@ -808,15 +880,13 @@ async function startIngestion() {
     }
   };
 
-  activeUploadWorker.onerror = (err) => {
+  activeUploadWorker.onerror = async (err) => {
+    console.warn("Worker error encountered, falling back to direct upload:", err);
     if (activeUploadWorker) {
       activeUploadWorker.terminate();
       activeUploadWorker = null;
     }
-    releaseWakeLock();
-    uploading.value = false;
-    console.error("Worker error:", err);
-    toast.danger("Background worker encountered an error.");
+    await runDirectUpload();
   };
 
   activeUploadWorker.postMessage({
