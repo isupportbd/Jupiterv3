@@ -19,6 +19,6 @@ Thumbs.db
 
 # Lock files — regenerated per developer's package manager
 bun.lock
-package-lock.json
+# package-lock.json (kept for Docker/CI reproducibility)
 pnpm-lock.yaml
 yarn.lock
