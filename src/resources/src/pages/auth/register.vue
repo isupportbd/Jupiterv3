@@ -5,12 +5,6 @@
         <AppLogo :size="40" text-class="fs-4 text-primary fw-bold" />
       </div>
       <h5 class="text-center fw-bold mb-3">Create Account</h5>
-      <p
-        v-if="message"
-        class="text-center alert py-1 mb-2 fs-7"
-        :class="isError ? 'alert-danger text-danger' : 'alert-success text-success'">
-        {{ message }}
-      </p>
       <form @submit.prevent="onSubmit">
         <div class="mb-2">
           <Input
@@ -93,17 +87,10 @@ const form = useGumForm({
 });
 
 const processing = form.processing;
-const message = ref("");
-const isError = ref(false);
 
 const onSubmit = async () => {
-  message.value = "";
-  isError.value = false;
-
   if (form.data.password !== form.data.password_confirmation) {
-    isError.value = true;
-    message.value = "Password confirmation does not match";
-    toast.danger(message.value);
+    toast.danger("Password confirmation does not match");
     return;
   }
 
@@ -126,14 +113,12 @@ const onSubmit = async () => {
           return;
         }
 
-        message.value = "Registration successful. Please verify your email.";
-        toast.success(message.value);
-        form.reset();
+        toast.success("Registration successful. Please verify your email.");
+        await router.push("/login");
       },
       onError: (_errors, error) => {
-        isError.value = true;
-        message.value = error instanceof Error ? error.message : "Unable to register right now";
-        toast.danger(message.value);
+        const errMsg = error instanceof Error ? error.message : "Unable to register right now";
+        toast.danger(errMsg);
       }
     }
   );
