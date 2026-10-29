@@ -15,6 +15,13 @@
       "when": 1793042695241,
       "tag": "0001_blushing_aaron_stack",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793250000000,
+      "tag": "0002_add_all_models",
+      "breakpoints": true
     }
   ]
 }

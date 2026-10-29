@@ -22,3 +22,6 @@ bun.lock
 # package-lock.json (kept for Docker/CI reproducibility)
 pnpm-lock.yaml
 yarn.lock
+
+scratch/
+*.csv
