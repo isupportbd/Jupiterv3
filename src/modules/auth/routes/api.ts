@@ -178,6 +178,19 @@ import {
   updateOfficeStatus,
   updateStaffStatus
 } from "@/modules/auth/controllers/admin-user.controller.js";
+import {
+  CreateStaffBodySchema,
+  ExtendSubscriptionBodySchema,
+  ListOfficesQuerySchema,
+  ListOfficesResponseSchema,
+  ListStaffResponseSchema,
+  OfficeActionResponseSchema,
+  ResetStaffPasswordBodySchema,
+  StaffActionResponseSchema,
+  UpdateOfficeStatusBodySchema,
+  UpdateStaffStatusBodySchema,
+  UserIdParamSchema
+} from "../controllers/admin-user.schema.js";
 import { requireRole } from "@/middlewares/role-middleware.js";
 
 const publicRoute = createRouter()
@@ -225,21 +238,177 @@ const protectedRoute = createRouter()
   .api(logoutRoute, logout)
   .api(logoutAllDevicesRoute, logoutAllDevices);
 
+const listStaffRoute = createRoute({
+  path: "/staff",
+  method: "get",
+  tags: ["Staff Management"],
+  description: "Lists staff accounts created by the authenticated Office Admin",
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(ListStaffResponseSchema, "Staff accounts fetched successfully"),
+    [HttpStatusCodes.INTERNAL_SERVER_ERROR]: jsonContent(MessageSchema, "Failed to fetch staff accounts")
+  }
+});
+
+const createStaffRoute = createRoute({
+  path: "/staff",
+  method: "post",
+  tags: ["Staff Management"],
+  description: "Creates a staff account under the office",
+  request: {
+    body: jsonContent(CreateStaffBodySchema, "Create staff payload")
+  },
+  responses: {
+    [HttpStatusCodes.CREATED]: jsonContent(StaffActionResponseSchema, "Staff account created successfully"),
+    [HttpStatusCodes.BAD_REQUEST]: jsonContent(MessageSchema, "Validation or limit error"),
+    [HttpStatusCodes.CONFLICT]: jsonContent(MessageSchema, "Email already exists"),
+    [HttpStatusCodes.INTERNAL_SERVER_ERROR]: jsonContent(MessageSchema, "Failed to create staff account")
+  }
+});
+
+const resetStaffPasswordRoute = createRoute({
+  path: "/staff/{id}/password-reset",
+  method: "post",
+  tags: ["Staff Management"],
+  description: "Resets password for an office staff",
+  request: {
+    params: UserIdParamSchema,
+    body: jsonContent(ResetStaffPasswordBodySchema, "New password payload")
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(MessageSchema, "Staff password reset successfully"),
+    [HttpStatusCodes.BAD_REQUEST]: jsonContent(MessageSchema, "Invalid password"),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(MessageSchema, "Staff account not found"),
+    [HttpStatusCodes.INTERNAL_SERVER_ERROR]: jsonContent(MessageSchema, "Failed to reset staff password")
+  }
+});
+
+const updateStaffStatusRoute = createRoute({
+  path: "/staff/{id}/status",
+  method: "post",
+  tags: ["Staff Management"],
+  description: "Toggles staff status (active / rejected)",
+  request: {
+    params: UserIdParamSchema,
+    body: jsonContent(UpdateStaffStatusBodySchema, "Status update payload")
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(StaffActionResponseSchema, "Staff status updated successfully"),
+    [HttpStatusCodes.BAD_REQUEST]: jsonContent(MessageSchema, "Invalid status"),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(MessageSchema, "Staff account not found"),
+    [HttpStatusCodes.INTERNAL_SERVER_ERROR]: jsonContent(MessageSchema, "Failed to update staff status")
+  }
+});
+
+const transferOfficeAdminRoute = createRoute({
+  path: "/staff/{id}/transfer-admin",
+  method: "post",
+  tags: ["Staff Management"],
+  description: "Transfers Office Admin ownership to a designated staff member",
+  request: {
+    params: UserIdParamSchema
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(StaffActionResponseSchema, "Administration transferred successfully"),
+    [HttpStatusCodes.FORBIDDEN]: jsonContent(MessageSchema, "Only active admin can transfer"),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(MessageSchema, "Staff account not found"),
+    [HttpStatusCodes.INTERNAL_SERVER_ERROR]: jsonContent(MessageSchema, "Transfer failed")
+  }
+});
+
+const listOfficesRoute = createRoute({
+  path: "/admin/users",
+  method: "get",
+  tags: ["Office Management"],
+  description: "Lists registered offices/admins for SuperAdmin review",
+  request: {
+    query: ListOfficesQuerySchema
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(ListOfficesResponseSchema, "Office accounts fetched successfully"),
+    [HttpStatusCodes.INTERNAL_SERVER_ERROR]: jsonContent(MessageSchema, "Failed to fetch office accounts")
+  }
+});
+
+const updateOfficeStatusRoute = createRoute({
+  path: "/admin/users/{id}/status",
+  method: "post",
+  tags: ["Office Management"],
+  description: "Toggles office status between active and inactive",
+  request: {
+    params: UserIdParamSchema,
+    body: jsonContent(UpdateOfficeStatusBodySchema, "Status update payload")
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(OfficeActionResponseSchema, "Office status updated"),
+    [HttpStatusCodes.FORBIDDEN]: jsonContent(MessageSchema, "Cannot modify Super Admin"),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(MessageSchema, "Office account not found"),
+    [HttpStatusCodes.INTERNAL_SERVER_ERROR]: jsonContent(MessageSchema, "Failed to update office status")
+  }
+});
+
+const approveOfficeRoute = createRoute({
+  path: "/admin/users/{id}/approve",
+  method: "post",
+  tags: ["Office Management"],
+  description: "Approves a pending office admin",
+  request: {
+    params: UserIdParamSchema
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(OfficeActionResponseSchema, "Office approved successfully"),
+    [HttpStatusCodes.FORBIDDEN]: jsonContent(MessageSchema, "Cannot modify Super Admin"),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(MessageSchema, "Office account not found"),
+    [HttpStatusCodes.INTERNAL_SERVER_ERROR]: jsonContent(MessageSchema, "Failed to approve office")
+  }
+});
+
+const rejectOfficeRoute = createRoute({
+  path: "/admin/users/{id}/reject",
+  method: "post",
+  tags: ["Office Management"],
+  description: "Rejects or suspends an office admin",
+  request: {
+    params: UserIdParamSchema
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(OfficeActionResponseSchema, "Office rejected successfully"),
+    [HttpStatusCodes.FORBIDDEN]: jsonContent(MessageSchema, "Cannot modify Super Admin"),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(MessageSchema, "Office account not found"),
+    [HttpStatusCodes.INTERNAL_SERVER_ERROR]: jsonContent(MessageSchema, "Failed to reject office")
+  }
+});
+
+const extendSubscriptionRoute = createRoute({
+  path: "/admin/users/{id}/subscription",
+  method: "post",
+  tags: ["Office Management"],
+  description: "Manually extends an office admin's subscription",
+  request: {
+    params: UserIdParamSchema,
+    body: jsonContent(ExtendSubscriptionBodySchema, "Subscription extension payload")
+  },
+  responses: {
+    [HttpStatusCodes.OK]: jsonContent(OfficeActionResponseSchema, "Subscription extended successfully"),
+    [HttpStatusCodes.NOT_FOUND]: jsonContent(MessageSchema, "Office account not found"),
+    [HttpStatusCodes.INTERNAL_SERVER_ERROR]: jsonContent(MessageSchema, "Failed to extend subscription")
+  }
+});
+
 const officeAdminRoute = createRouter()
-  .use("/staff*", authMiddleware, requireRole("admin", "super_admin"))
-  .get("/staff", listStaff)
-  .post("/staff", createStaff)
-  .post("/staff/:id/password-reset", resetStaffPassword)
-  .post("/staff/:id/status", updateStaffStatus)
-  .post("/staff/:id/transfer-admin", transferOfficeAdmin);
+  .group(authMiddleware, requireRole("admin", "super_admin"))
+  .api(listStaffRoute, listStaff)
+  .api(createStaffRoute, createStaff)
+  .api(resetStaffPasswordRoute, resetStaffPassword)
+  .api(updateStaffStatusRoute, updateStaffStatus)
+  .api(transferOfficeAdminRoute, transferOfficeAdmin);
 
 const superAdminRoute = createRouter()
-  .use("/admin/users*", authMiddleware, requireRole("super_admin"))
-  .get("/admin/users", listOffices)
-  .post("/admin/users/:id/status", updateOfficeStatus)
-  .post("/admin/users/:id/approve", approveOffice)
-  .post("/admin/users/:id/reject", rejectOffice)
-  .post("/admin/users/:id/subscription", extendSubscription);
+  .group(authMiddleware, requireRole("super_admin"))
+  .api(listOfficesRoute, listOffices)
+  .api(updateOfficeStatusRoute, updateOfficeStatus)
+  .api(approveOfficeRoute, approveOffice)
+  .api(rejectOfficeRoute, rejectOffice)
+  .api(extendSubscriptionRoute, extendSubscription);
 
 export default createRouter()
   .route("/", publicRoute)
